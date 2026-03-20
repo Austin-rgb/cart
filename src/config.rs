@@ -1,10 +1,8 @@
 use actix_web::web::{Data, ServiceConfig, get, scope};
 
-use crate::{
-    handlers::{add, remove},
-    service::Service,
-};
+use crate::{handlers, service::Service};
 
+#[derive(Clone)]
 pub struct Module {
     pub service: Service,
 }
@@ -14,12 +12,13 @@ impl Module {
         let service = Service::new();
         Self { service }
     }
-    pub fn config(&self, mut cfg: ServiceConfig, namespace: &str) {
+    pub fn config(&self, cfg: &mut ServiceConfig, namespace: &str) {
         cfg.service(
             scope(namespace)
                 .app_data(Data::new(self.service.clone()))
-                .route("/add", get().to(add))
-                .route("/remove", get().to(remove)),
+                .route("/add", get().to(handlers::add))
+                .route("/remove/{id}", get().to(handlers::remove))
+                .route("/get", get().to(handlers::get)),
         );
     }
 }

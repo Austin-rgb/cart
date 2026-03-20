@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::to_string;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::service::Service;
@@ -8,10 +9,10 @@ use actix_web::{
     web::{Data, Path, Query},
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct CartItem {
-    product: String,
-    qty: u32,
+    pub product: String,
+    pub qty: u32,
 }
 
 pub async fn add(
@@ -21,9 +22,8 @@ pub async fn add(
 ) -> impl Responder {
     let item = data.into_inner();
     if let Some(cart_id) = req.cookie("cart_id") {
-        service
-            .add(cart_id.value().to_owned(), item.product, item.qty)
-            .await;
+        let cart_id = cart_id.value();
+        service.add(cart_id.to_owned(), item).await;
         HttpResponse::Ok().finish()
     } else {
         let cart_id = SystemTime::now()
@@ -31,7 +31,13 @@ pub async fn add(
             .unwrap()
             .as_nanos()
             .to_string();
-        let cookie = Cookie::build("cart_id", cart_id).finish();
+        service.add(cart_id.clone(), item).await;
+        let cookie = Cookie::build("cart_id", cart_id)
+            // Set path to root '/'
+            // This is very important as actix-web defaults to setting it to current path making it unusable from other paths
+            // You can think setting it to something else, but that will change how it's supposed to be accessed given that the root path might be configured differently in the main app
+            .path("/")
+            .finish();
         HttpResponse::Ok().cookie(cookie).finish()
     }
 }
@@ -46,4 +52,14 @@ pub async fn remove(
         service.remove(cart_id.value().to_owned(), product).await;
     }
     HttpResponse::Ok().finish()
+}
+
+pub async fn get(service: Data<Service>, req: HttpRequest) -> impl Responder {
+    let mut cart = Vec::new();
+    if let Some(cart_id) = req.cookie("cart_id") {
+        cart = service.get(cart_id.value().to_owned()).await;
+    }
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(to_string(&cart).unwrap_or("".to_string()))
 }
